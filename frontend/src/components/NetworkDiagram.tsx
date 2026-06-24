@@ -11,12 +11,13 @@ interface Props {
 }
 
 const W = 700;
-const H = 360;
+const H = 366;
 const NODE_R = 10;
 const MAX_DISPLAY_NODES = 8; // cap per layer for visual clarity
 const NODE_AREA_H = 280;     // vertical band the neurons occupy (leaves room below for labels)
-const DEAD_LABEL_Y = 322;    // "X dead" count row
-const LABEL_Y = 344;         // layer-name row
+const DEAD_LABEL_Y = 308;    // "X dead" count row
+const LABEL_Y = 328;         // layer-name row (name on this line, size on the next)
+const LABEL_LINE2_DY = 13;   // offset for the "(size)" second line
 
 // Endpoints of the gradient heatmap scale (also used by the legend):
 // purple (low) → amber (high), which pops on the dark surface.
@@ -261,20 +262,23 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
           })
         )}
 
-        {/* Layer labels */}
-        {layerSizes.map((size, li) => (
-          <text
-            key={li}
-            x={xStep * (li + 1)}
-            y={LABEL_Y}
-            textAnchor="middle"
-            fontSize={11}
-            fill="var(--color-text-tertiary)"
-          >
-            {li === 0 ? "input" : li === layers - 1 ? "output" : `hidden ${li}`}
-            {"\n"}({size})
-          </text>
-        ))}
+        {/* Layer labels — name and size stacked on two lines so they stay narrow
+            and don't collide horizontally even with many layers. */}
+        {layerSizes.map((size, li) => {
+          const cx = xStep * (li + 1);
+          const name = li === 0 ? "input" : li === layers - 1 ? "output" : `hidden ${li}`;
+          return (
+            <text
+              key={li}
+              textAnchor="middle"
+              fontSize={11}
+              fill="var(--color-text-tertiary)"
+            >
+              <tspan x={cx} y={LABEL_Y}>{name}</tspan>
+              <tspan x={cx} y={LABEL_Y + LABEL_LINE2_DY}>({size})</tspan>
+            </text>
+          );
+        })}
 
         {/* Per-layer dead-neuron count */}
         {deadInfo.perLayer.filter((d) => d.dead > 0).map((d) => (
