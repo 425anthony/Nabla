@@ -24,9 +24,9 @@ A from-scratch neural network trained on MNIST with a live interactive visualize
 |---|---|
 | Training engine | Pure NumPy (no autograd) |
 | API | FastAPI + Server-Sent Events |
-| Frontend | React + Vite |
+| Frontend | React + TypeScript + Vite |
 | Charts | Recharts |
-| Deployment | Docker + docker-compose |
+| Deployment | Docker + docker-compose, Render (blueprint) |
 
 ---
 
@@ -80,8 +80,8 @@ Max relative error is typically $< 10^{-5}$, confirming the analytical gradients
 
 **With Docker (recommended):**
 ```bash
-git clone https://github.com/425anthony/neural-net-visualizer
-cd neural-net-visualizer
+git clone <your-repo-url>   # e.g. https://github.com/<you>/nabla
+cd nabla
 docker-compose up --build
 ```
 Then open **http://localhost:8080** (frontend); the backend runs on http://localhost:8000.
@@ -90,13 +90,14 @@ Then open **http://localhost:8080** (frontend); the backend runs on http://local
 ```bash
 # Backend
 cd backend
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn app.main:app --reload --port 8000
 
 # Frontend (new terminal)
 cd frontend
 npm install
-npm run dev
+npm run dev   # serves on http://localhost:5173
 ```
 
 MNIST data (~11MB) downloads automatically on first run.
@@ -148,6 +149,7 @@ frontend as a **static site**.
 |---|---|---|
 | POST | `/train` | Start a training job, returns `job_id` |
 | GET | `/train/{job_id}/stream` | SSE stream of epoch snapshots |
+| GET | `/train/{job_id}/status` | Job status + epochs completed |
 | GET | `/train/{job_id}/snapshots` | All snapshots after training |
 | GET | `/train/{job_id}/snapshots/{epoch}` | Snapshot at specific epoch |
 | POST | `/gradient-check` | Finite-difference gradient verification |
@@ -158,19 +160,32 @@ frontend as a **static site**.
 ## Project structure
 
 ```
-neural-net-visualizer/
+nabla/
+├── docker-compose.yml          # Brings up backend + frontend together
+├── render.yaml                 # Render blueprint (backend web service + static frontend)
 ├── backend/
-│   ├── network.py      # DenseLayer, SoftmaxOutputLayer, NeuralNetwork, gradient_check
-│   ├── trainer.py      # MNIST loader, training loop, snapshot export
-│   ├── main.py         # FastAPI app, SSE streaming, job store
-│   └── requirements.txt
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── app/
+│       ├── __init__.py
+│       ├── data.py             # MNIST download + cache + batching
+│       ├── network.py          # DenseLayer, SoftmaxOutputLayer, NeuralNetwork, gradient_check
+│       ├── trainer.py          # Training loop, one-hot, snapshot export
+│       └── main.py             # FastAPI app, SSE streaming, job store, validation
 └── frontend/
+    ├── Dockerfile
+    ├── nginx.conf              # SPA serving for the production image
+    ├── index.html
     └── src/
-        ├── App.jsx
+        ├── main.tsx
+        ├── index.css           # Dark theme tokens + component styles
+        ├── App.tsx             # Layout, config panel, controls, loss/accuracy chart, scrubber
+        ├── hooks/
+        │   └── useTraining.ts  # POST /train → SSE stream, snapshot normalization
         └── components/
-            ├── NetworkDiagram.jsx   # SVG network with weight/gradient coloring
-            ├── LossCurve.jsx        # Recharts loss + accuracy plots
-            ├── EpochScrubber.jsx    # Play/pause epoch animation
-            ├── NeuronInspector.jsx  # Click-to-inspect panel
-            └── TrainingConfig.jsx   # Architecture + hyperparameter form
+            └── NetworkDiagram.tsx   # SVG network: glowing neurons, weight/gradient coloring, inspect panel
 ```
+
+> The loss curve, epoch scrubber, config form, and neuron inspector are
+> implemented inline within `App.tsx` and `NetworkDiagram.tsx` rather than as
+> separate component files.
