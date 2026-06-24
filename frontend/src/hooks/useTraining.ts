@@ -4,7 +4,9 @@ export interface LayerSnapshot {
   W: number[][];
   b: number[][];
   dW: number[][];
-  dz_mean: number;  // mean |∂L/∂z| — used for gradient heatmap
+  dz_mean: number;            // mean |∂L/∂z| — used for gradient heatmap
+  activation: string;         // "relu" | "softmax"
+  mean_activation: number[];  // per-neuron mean activation — used for dead-neuron detection
 }
 
 export interface EpochSnapshot {
@@ -42,6 +44,8 @@ function normalizeSnapshot(raw: any): EpochSnapshot {
       b: l.b,
       dW: l.dW,
       dz_mean: l.grad_magnitude,
+      activation: l.activation,
+      mean_activation: l.mean_activation ?? [],
     })),
   };
 }
@@ -115,5 +119,13 @@ export function useTraining() {
     setIsTraining(false);
   }, []);
 
-  return { snapshots, isTraining, isDone, error, startTraining, stopTraining };
+  // Clear results — e.g. when the architecture changes so a stale diagram
+  // doesn't get mismatched against a new layer layout.
+  const reset = useCallback(() => {
+    setSnapshots([]);
+    setIsDone(false);
+    setError(null);
+  }, []);
+
+  return { snapshots, isTraining, isDone, error, startTraining, stopTraining, reset };
 }

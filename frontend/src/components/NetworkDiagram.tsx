@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import type { LayerSnapshot } from "../hooks/useTraining";
+import { InfoTip } from "./InfoTip";
 
 interface Props {
   layerSizes: number[];
   snapshot: LayerSnapshot[] | null;
   showGradients: boolean;
   isTraining?: boolean;
+  transitionMs?: number;  // color/stroke interpolation duration (matches playback step)
 }
 
 const W = 700;
@@ -17,6 +19,10 @@ const MAX_DISPLAY_NODES = 8; // cap per layer for visual clarity
 // purple (low) → amber (high), which pops on the dark surface.
 const GRAD_LOW = "#7c6ff7";
 const GRAD_HIGH = "#f59e0b";
+
+// A ReLU neuron is "dead" if its mean activation on a sample batch is ~0.
+const DEAD_THRESHOLD = 0.01;
+const DEAD_COLOR = "#4a4a55"; // muted gray
 
 // Map a value in [0,1] to a purple→amber color for the gradient heatmap
 function gradientColor(t: number): string {
@@ -36,10 +42,11 @@ function neuronColor(li: number, layers: number): string {
   return "#7c6ff7";                          // hidden: purple/violet
 }
 
-export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining }: Props) {
+export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining, transitionMs = 450 }: Props) {
   const [inspected, setInspected] = useState<{
     layer: number; neuron: number
   } | null>(null);
+  const [deadInfoOpen, setDeadInfoOpen] = useState(false);
 
   const layers = layerSizes.length;
   const xStep = W / (layers + 1);
@@ -85,6 +92,33 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
     return result;
   }, [positions, snapshot, layers]);
 
+  // A neuron at visual layer `layer` (>= 1) is "dead" if its weight-layer is a
+  // ReLU layer and its mean activation on the sample batch is below threshold.
+  const isDead = (li: number, ni: number): boolean => {
+    if (li < 1 || !snapshot) return false;
+    const wl = snapshot[li - 1];
+    if (!wl || wl.activation !== "relu") return false;
+    const a = wl.mean_activation?.[ni];
+    return a !== undefined && a < DEAD_THRESHOLD;
+  };
+
+  // Per-layer dead counts (ReLU hidden layers only), keyed by visual layer.
+  const deadInfo = useMemo(() => {
+    const perLayer: { li: number; dead: number; total: number }[] = [];
+    let totalDead = 0;
+    if (snapshot) {
+      for (let li = 1; li < layers; li++) {
+        const wl = snapshot[li - 1];
+        if (wl && wl.activation === "relu" && wl.mean_activation?.length) {
+          const dead = wl.mean_activation.filter((a) => a < DEAD_THRESHOLD).length;
+          perLayer.push({ li, dead, total: wl.mean_activation.length });
+          totalDead += dead;
+        }
+      }
+    }
+    return { perLayer, totalDead };
+  }, [snapshot, layers]);
+
   // A neuron at visual layer `layer` (>= 1) is produced by weight-layer
   // snapshot[layer - 1]; its incoming weights are column `neuron` of that matrix.
   const inspectedInfo = useMemo(() => {
@@ -92,17 +126,20 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
     const { layer, neuron } = inspected;
     const wl = layer >= 1 ? snapshot[layer - 1] : null;
     if (!wl) {
-      return { isInput: true, bias: null, dzMean: null,
+      return { isInput: true, bias: null, dzMean: null, meanAct: null, dead: false,
         topWeights: [] as { src: number; w: number }[] };
     }
     const colWeights = wl.W.map((row, src) => ({ src, w: row[neuron] ?? 0 }));
     const topWeights = [...colWeights]
       .sort((a, b) => Math.abs(b.w) - Math.abs(a.w))
       .slice(0, 5);
+    const meanAct = wl.mean_activation?.[neuron] ?? null;
     return {
       isInput: false,
       bias: wl.b?.[0]?.[neuron] ?? null,
       dzMean: wl.dz_mean,
+      meanAct,
+      dead: wl.activation === "relu" && meanAct !== null && meanAct < DEAD_THRESHOLD,
       topWeights,
     };
   }, [inspected, snapshot]);
@@ -151,7 +188,7 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
                 strokeWidth: 0.6 + 1.8 * opacity,
                 opacity: 0.18 + 0.6 * opacity,
                 filter: `drop-shadow(0 0 ${1 + 2 * opacity}px ${col})`,
-                transition: "stroke 0.45s ease, stroke-width 0.45s ease, opacity 0.45s ease",
+                transition: `stroke ${transitionMs}ms ease, stroke-width ${transitionMs}ms ease, opacity ${transitionMs}ms ease`,
               }}
             />
           );
@@ -162,23 +199,28 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
           layer.map(({ x, y, neuronIdx }) => {
             const isInspected =
               inspected?.layer === li && inspected?.neuron === neuronIdx;
+            const dead = isDead(li, neuronIdx);
             // Visual layer li (>= 1) is colored by weight-layer li-1's gradient.
             const gradLayer = li >= 1 ? snapshot?.[li - 1] : undefined;
             const gradIntensity = gradLayer
               ? Math.min(1, gradLayer.dz_mean / maxGrad)
               : 0;
-            const fill = showGradients && snapshot
+            const liveFill = showGradients && snapshot
               ? gradientColor(gradIntensity)
               : neuronColor(li, layers);
-            // Soft colored glow; intensifies while training.
-            const glow = isTraining
-              ? `drop-shadow(0 0 6px ${fill}) drop-shadow(0 0 13px ${fill})`
-              : `drop-shadow(0 0 5px ${fill})`;
+            // Dead neurons are gray regardless of the heatmap toggle.
+            const fill = dead ? DEAD_COLOR : liveFill;
+            // Soft colored glow; intensifies while training. Dead neurons barely glow.
+            const glow = dead
+              ? "drop-shadow(0 0 1px #000)"
+              : isTraining
+                ? `drop-shadow(0 0 6px ${fill}) drop-shadow(0 0 13px ${fill})`
+                : `drop-shadow(0 0 5px ${fill})`;
 
             return (
               <g key={`${li}-${neuronIdx}`}>
-                {/* "Alive" pulse during active training — glows outward */}
-                {isTraining && (
+                {/* "Alive" pulse during active training — not for dead neurons */}
+                {isTraining && !dead && (
                   <circle
                     cx={x} cy={y} r={NODE_R}
                     className="nd-pulse-ring"
@@ -192,14 +234,16 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
                   />
                 )}
                 <circle
-                  cx={x} cy={y} r={isInspected ? NODE_R + 3 : NODE_R}
+                  cx={x} cy={y} r={isInspected ? NODE_R + 3 : dead ? NODE_R - 1 : NODE_R}
                   fill={fill}
-                  stroke={isInspected ? "#f5b942" : "#0a0a0f"}
+                  fillOpacity={dead ? 0.8 : 1}
+                  stroke={isInspected ? "#f5b942" : dead ? "#6a6a80" : "#0a0a0f"}
                   strokeWidth={isInspected ? 2.5 : 1.5}
+                  strokeDasharray={dead && !isInspected ? "2 2" : undefined}
                   style={{
                     cursor: "pointer",
                     filter: glow,
-                    transition: "fill 0.45s ease, r 0.15s ease, stroke 0.15s ease, filter 0.3s ease",
+                    transition: `fill ${transitionMs}ms ease, r 150ms ease, stroke 150ms ease, filter ${Math.min(transitionMs, 400)}ms ease`,
                   }}
                   onClick={() =>
                     setInspected(
@@ -226,6 +270,21 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
             {"\n"}({size})
           </text>
         ))}
+
+        {/* Per-layer dead-neuron count */}
+        {deadInfo.perLayer.filter((d) => d.dead > 0).map((d) => (
+          <text
+            key={`dead-${d.li}`}
+            x={xStep * (d.li + 1)}
+            y={H - 22}
+            textAnchor="middle"
+            fontSize={10}
+            fontWeight={600}
+            fill="#9a9aae"
+          >
+            {d.dead} dead
+          </text>
+        ))}
       </svg>
 
       {/* Gradient heatmap legend */}
@@ -245,6 +304,52 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
             (0 → {maxGrad.toExponential(1)})
           </span>
+        </div>
+      )}
+
+      {/* Dead-neuron summary + explanation */}
+      {deadInfo.totalDead > 0 && (
+        <div style={{
+          marginTop: 8, padding: "8px 12px",
+          background: "var(--color-background-secondary)",
+          borderRadius: 8, fontSize: 12, color: "var(--color-text-secondary)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+              <span style={{
+                width: 9, height: 9, borderRadius: "50%",
+                background: DEAD_COLOR, border: "1px dashed #6a6a80",
+                display: "inline-block",
+              }} />
+              {deadInfo.totalDead} dead neuron{deadInfo.totalDead === 1 ? "" : "s"}
+              <InfoTip term="dead_neurons" />
+            </span>
+            <span style={{ color: "var(--color-text-tertiary)" }}>
+              {deadInfo.perLayer
+                .map((d) => `hidden ${d.li}: ${d.dead}/${d.total}`)
+                .join("   ·   ")}
+            </span>
+            <button
+              onClick={() => setDeadInfoOpen((o) => !o)}
+              style={{
+                marginLeft: "auto", cursor: "pointer", fontSize: 11,
+                background: "transparent", color: "var(--accent-purple)",
+                border: "none", padding: 0, textDecoration: "underline",
+              }}
+            >
+              {deadInfoOpen ? "hide" : "what's a dead neuron?"}
+            </button>
+          </div>
+          {deadInfoOpen && (
+            <p style={{ margin: "8px 0 0", lineHeight: 1.5, color: "var(--color-text-tertiary)" }}>
+              A <strong>dead neuron</strong> is a ReLU unit whose output is ~0 for
+              essentially every input (mean activation &lt; {DEAD_THRESHOLD}). When a
+              ReLU's pre-activation is driven negative for all data — often from too
+              high a learning rate or a large negative bias — its gradient is also 0,
+              so it stops updating and can never recover. Dead neurons waste model
+              capacity; if many appear, try lowering the learning rate.
+            </p>
+          )}
         </div>
       )}
 
@@ -269,6 +374,21 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
               <>
                 <span>bias: {inspectedInfo.bias?.toFixed(4) ?? "n/a"}</span>
                 <span>mean |∂L/∂z|: {inspectedInfo.dzMean?.toFixed(5)}</span>
+                {inspectedInfo.meanAct !== null && (
+                  <span>mean act: {inspectedInfo.meanAct.toFixed(4)}</span>
+                )}
+                {inspectedInfo.dead && (
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    color: "#b8b8c8", fontWeight: 600,
+                  }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%",
+                      background: DEAD_COLOR, border: "1px dashed #6a6a80",
+                    }} />
+                    dead
+                  </span>
+                )}
               </>
             )}
             <span

@@ -4,6 +4,7 @@ import {
 } from "recharts";
 import { useTraining, type TrainConfig } from "./hooks/useTraining";
 import { NetworkDiagram } from "./components/NetworkDiagram";
+import { InfoTip, BeginnerContext } from "./components/InfoTip";
 
 const DEFAULT_CONFIG: TrainConfig = {
   layer_sizes: [784, 128, 64, 10],
@@ -16,26 +17,35 @@ const DEFAULT_CONFIG: TrainConfig = {
 };
 
 export default function App() {
-  const { snapshots, isTraining, isDone, error, startTraining, stopTraining } =
+  const { snapshots, isTraining, isDone, error, startTraining, stopTraining, reset } =
     useTraining();
 
   const [config, setConfig] = useState<TrainConfig>(DEFAULT_CONFIG);
   const [epochIdx, setEpochIdx] = useState(0);
   const [showGradients, setShowGradients] = useState(false);
+  const [beginner, setBeginner] = useState(true); // ML-beginner mode (ⓘ tips + plain-English panel)
   const [playing, setPlaying] = useState(false);
-  const playRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [speed, setSpeed] = useState(1); // playback multiplier: 0.5x | 1x | 2x
+  const rafRef = useRef<number | null>(null);
+  const speedRef = useRef(speed);        // read live inside the rAF loop
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+
+  // One epoch advances every BASE_STEP_MS / speed; the diagram's CSS transition
+  // is tied to this so colors morph continuously across the whole step.
+  const BASE_STEP_MS = 700;
+  const stepMs = BASE_STEP_MS / speed;
 
   const stopPlaying = () => {
-    if (playRef.current !== null) {
-      clearInterval(playRef.current);
-      playRef.current = null;
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
     setPlaying(false);
   };
 
-  // Clear any running playback interval when the component unmounts.
+  // Cancel any running playback frame when the component unmounts.
   useEffect(() => () => {
-    if (playRef.current !== null) clearInterval(playRef.current);
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
   }, []);
 
   // Keep epoch scrubber at latest epoch while training
@@ -59,39 +69,131 @@ export default function App() {
     [snapshots]
   );
 
-  // Play through epochs
+  // Play through epochs with requestAnimationFrame for smooth, jitter-free timing.
   const togglePlay = () => {
     if (playing) {
       stopPlaying();
       return;
     }
+    // Restart from the beginning if we're already at the end.
+    let i = epochIdx >= snapshots.length - 1 ? 0 : epochIdx;
+    setEpochIdx(i);
     setPlaying(true);
-    let i = epochIdx;
-    playRef.current = setInterval(() => {
-      i++;
-      if (i >= snapshots.length) {
-        stopPlaying();
-      } else {
+
+    let last: number | null = null;
+    let acc = 0;
+    const tick = (now: number) => {
+      if (last !== null) acc += now - last;
+      last = now;
+      const step = BASE_STEP_MS / speedRef.current; // live speed
+      while (acc >= step) {
+        acc -= step;
+        i++;
+        if (i >= snapshots.length) {
+          stopPlaying();
+          return;
+        }
         setEpochIdx(i);
       }
-    }, 300);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
   };
 
+  // ── Architecture builder ───────────────────────────────────────────────
+  // layer_sizes = [input(784), ...hidden, output(10)]; only hidden is editable.
+  const MAX_HIDDEN = 6;     // keeps total layers ≤ 8 (matches backend validator)
+  const MIN_NEURONS = 1;
+  const MAX_NEURONS = 256;
+  const hidden = config.layer_sizes.slice(1, -1);
+
+  // Any architecture edit invalidates the prior run's snapshots.
+  const setLayerSizes = (next: number[]) => {
+    setConfig((c) => ({ ...c, layer_sizes: next }));
+    reset();
+  };
+  const addHiddenLayer = () => {
+    if (hidden.length >= MAX_HIDDEN) return;
+    const sizes = config.layer_sizes;
+    setLayerSizes([...sizes.slice(0, -1), 32, sizes[sizes.length - 1]]);
+  };
+  const removeHiddenLayer = (idx: number) => {
+    const next = config.layer_sizes.filter((_, i) => i !== idx + 1); // +1: skip input
+    setLayerSizes(next);
+  };
+  const setHiddenSize = (idx: number, value: number) => {
+    const v = Math.max(MIN_NEURONS, Math.min(MAX_NEURONS, value || MIN_NEURONS));
+    const next = config.layer_sizes.map((s, i) => (i === idx + 1 ? v : s));
+    setLayerSizes(next);
+  };
+
+  // ── Plain-English status for beginner mode (updates each epoch) ─────────
+  const lastSnap = snapshots[snapshots.length - 1] ?? null;
+  const beginnerStatus = (() => {
+    if (error) return `Something went wrong while training: ${error}`;
+    if (isTraining) {
+      if (!currentSnap) {
+        return "Warming up — loading the handwritten-digit images and starting the network off with random guesses…";
+      }
+      const pct = Math.round(currentSnap.test_acc * 100);
+      const prev = snapshots[snapshots.length - 2];
+      const better = !prev || currentSnap.test_acc >= prev.test_acc;
+      return `Epoch ${currentSnap.epoch}: The network is adjusting its weights to reduce mistakes${better ? " and getting better" : ""} — it now correctly identifies ${pct}% of digits it has never seen before.`;
+    }
+    if (isDone && lastSnap) {
+      return `Done! After ${snapshots.length} epochs the network correctly identifies ${Math.round(lastSnap.test_acc * 100)}% of unseen digits. Drag the slider below to replay how it learned, epoch by epoch.`;
+    }
+    if (snapshots.length > 0 && currentSnap) {
+      return `Replaying epoch ${currentSnap.epoch}: at this point in training the network gets ${Math.round(currentSnap.test_acc * 100)}% of unseen digits right.`;
+    }
+    return "This network starts out guessing randomly. Press “Start training” and watch the diagram below come alive as it learns to read handwritten digits.";
+  })();
+
   return (
+    <BeginnerContext.Provider value={beginner}>
     <div style={{
       maxWidth: 900, margin: "0 auto", padding: "24px 20px",
       fontFamily: "var(--font-sans, system-ui)",
       color: "var(--color-text-primary, #1a1a1a)",
     }}>
-      <h1 style={{
-        fontSize: 34, fontWeight: 700, marginBottom: 2, letterSpacing: "-0.02em",
-        color: "#f3f1ff",
-        textShadow: "0 0 24px rgba(124,111,247,0.45)",
-      }}>
-        <span style={{ color: "var(--accent-purple)" }}>∇</span> Nabla
-      </h1>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <h1 style={{
+          fontSize: 34, fontWeight: 700, marginBottom: 2, letterSpacing: "-0.02em",
+          color: "#f3f1ff",
+          textShadow: "0 0 24px rgba(124,111,247,0.45)",
+        }}>
+          <span style={{ color: "var(--accent-purple)" }}>∇</span> Nabla
+        </h1>
+
+        {/* Beginner / Advanced mode toggle */}
+        <div style={{
+          display: "flex", gap: 2, padding: 3, borderRadius: 9, marginTop: 6,
+          background: "var(--color-background-secondary)",
+          border: "1px solid var(--color-border-secondary)",
+        }}>
+          {([["beginner", "Beginner"], ["advanced", "Advanced"]] as const).map(([val, label]) => {
+            const active = (val === "beginner") === beginner;
+            return (
+              <button
+                key={val}
+                onClick={() => setBeginner(val === "beginner")}
+                style={{
+                  padding: "5px 14px", borderRadius: 7, fontSize: 12, cursor: "pointer",
+                  border: "none", fontWeight: active ? 600 : 400,
+                  background: active ? "rgba(124,111,247,0.22)" : "transparent",
+                  color: active ? "#c9c2ff" : "var(--color-text-tertiary)",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <p style={{ fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 24 }}>
-        Neural network visualizer — pure NumPy backprop on MNIST, watching weights and gradients evolve during training
+        Neural network visualizer — pure NumPy backprop
+        <InfoTip term="backpropagation" /> on MNIST, watching weights and gradients evolve during training
       </p>
 
       {/* Config panel */}
@@ -101,10 +203,16 @@ export default function App() {
         padding: "18px", background: "var(--color-background-primary)",
         borderRadius: 12, border: "1px solid var(--color-border-secondary)",
       }}>
-        {(["epochs", "batch_size", "learning_rate", "data_fraction"] as const).map((key) => (
+        {(["epochs", "batch_size", "learning_rate", "data_fraction"] as const).map((key) => {
+          const tip = key === "epochs" ? "epoch"
+            : key === "batch_size" ? "batch_size"
+            : key === "learning_rate" ? "learning_rate"
+            : "data_fraction";
+          return (
           <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
               {key.replace("_", " ")}
+              <InfoTip term={tip} />
             </span>
             <input
               type="number"
@@ -119,7 +227,88 @@ export default function App() {
               className="nabla-input"
             />
           </label>
-        ))}
+          );
+        })}
+      </div>
+
+      {/* Architecture builder */}
+      <div style={{
+        marginBottom: 20, padding: "18px",
+        background: "var(--color-background-primary)",
+        borderRadius: 12, border: "1px solid var(--color-border-secondary)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Architecture</span>
+          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums" }}>
+            {config.layer_sizes.join(" → ")}
+          </span>
+          <button
+            onClick={addHiddenLayer}
+            disabled={isTraining || hidden.length >= MAX_HIDDEN}
+            className="nabla-btn"
+            style={{ marginLeft: "auto", padding: "5px 14px", fontSize: 13, opacity: (isTraining || hidden.length >= MAX_HIDDEN) ? 0.4 : 1 }}
+          >
+            + Add hidden layer
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Fixed input layer */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "var(--color-text-tertiary)" }}>
+            <span style={{ width: 78 }}>input</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>784 (fixed)</span>
+          </div>
+
+          {/* Editable hidden layers */}
+          {hidden.map((n, idx) => (
+            <div key={idx} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ width: 78, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                hidden {idx + 1}
+              </span>
+              <input
+                type="range"
+                min={MIN_NEURONS} max={MAX_NEURONS} value={n}
+                onChange={(e) => setHiddenSize(idx, +e.target.value)}
+                disabled={isTraining}
+                style={{ flex: 1 }}
+              />
+              <input
+                type="number"
+                min={MIN_NEURONS} max={MAX_NEURONS} value={n}
+                onChange={(e) => setHiddenSize(idx, parseInt(e.target.value, 10))}
+                disabled={isTraining}
+                className="nabla-input"
+                style={{ width: 72 }}
+              />
+              <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", width: 52 }}>neurons</span>
+              <button
+                onClick={() => removeHiddenLayer(idx)}
+                disabled={isTraining}
+                title="Remove this layer"
+                style={{
+                  width: 26, height: 26, borderRadius: 6, cursor: isTraining ? "default" : "pointer",
+                  background: "transparent", color: "var(--color-text-danger)",
+                  border: "1px solid var(--color-border-secondary)",
+                  opacity: isTraining ? 0.4 : 1, lineHeight: 1, fontSize: 16,
+                }}
+              >
+                −
+              </button>
+            </div>
+          ))}
+
+          {/* Fixed output layer */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "var(--color-text-tertiary)" }}>
+            <span style={{ width: 78 }}>output</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>10 (fixed)</span>
+          </div>
+        </div>
+
+        {hidden.length >= MAX_HIDDEN && (
+          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", margin: "10px 0 0" }}>
+            Maximum {MAX_HIDDEN} hidden layers.
+          </p>
+        )}
       </div>
 
       {/* Controls */}
@@ -141,6 +330,7 @@ export default function App() {
           />
           <span className="nabla-toggle" />
           Gradient heatmap
+          <InfoTip term="gradient_heatmap" />
         </label>
 
         {isDone && (
@@ -156,14 +346,27 @@ export default function App() {
         )}
       </div>
 
-      {/* Network diagram */}
-      {snapshots.length > 0 && (
-        <>
-          <div className="nabla-diagram-card" style={{
-            padding: 16, borderRadius: 12,
-            background: "var(--color-background-primary)",
-            marginBottom: 16,
-          }}>
+      {/* Beginner mode: plain-English annotation panel (live status) */}
+      {beginner && (
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 10,
+          marginBottom: 20, padding: "12px 14px", borderRadius: 10,
+          background: "rgba(124,111,247,0.08)",
+          border: "1px solid rgba(124,111,247,0.30)",
+          fontSize: 13, lineHeight: 1.5, color: "var(--color-text-secondary)",
+        }}>
+          <span style={{ fontSize: 15, lineHeight: 1.4 }}>💡</span>
+          <span>{beginnerStatus}</span>
+        </div>
+      )}
+
+      {/* Network diagram — always visible as a live architecture preview */}
+      <div className="nabla-diagram-card" style={{
+        padding: 16, borderRadius: 12,
+        background: "var(--color-background-primary)",
+        marginBottom: 16,
+      }}>
+        {currentSnap ? (
             <div style={{
               display: "flex", alignItems: "baseline", gap: 28,
               flexWrap: "wrap", marginBottom: 16,
@@ -172,7 +375,7 @@ export default function App() {
                 fontSize: 12, color: "var(--color-text-tertiary)",
                 textTransform: "uppercase", letterSpacing: "0.09em",
               }}>
-                Epoch {currentSnap?.epoch ?? 0}
+                Epoch {currentSnap?.epoch ?? 0}<InfoTip term="epoch" />
               </span>
 
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -184,7 +387,7 @@ export default function App() {
                   {((currentSnap?.test_acc ?? 0) * 100).toFixed(1)}%
                 </span>
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                  test accuracy
+                  test accuracy<InfoTip term="test_acc" />
                 </span>
               </div>
 
@@ -196,7 +399,7 @@ export default function App() {
                   {currentSnap?.train_loss?.toFixed(4)}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                  loss
+                  loss<InfoTip term="loss" />
                 </span>
               </div>
 
@@ -208,19 +411,28 @@ export default function App() {
                   {((currentSnap?.train_acc ?? 0) * 100).toFixed(1)}%
                 </span>
                 <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-                  train acc
+                  train acc<InfoTip term="train_acc" />
                 </span>
               </div>
             </div>
-
-            <NetworkDiagram
-              layerSizes={config.layer_sizes}
-              snapshot={currentSnap?.layers ?? null}
-              showGradients={showGradients}
-              isTraining={isTraining}
-            />
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 16 }}>
+            Architecture preview: {config.layer_sizes.join(" → ")} — press “Start training” to run.
           </div>
+        )}
 
+        <NetworkDiagram
+          layerSizes={config.layer_sizes}
+          snapshot={currentSnap?.layers ?? null}
+          showGradients={showGradients}
+          isTraining={isTraining}
+          transitionMs={playing ? stepMs : 400}
+        />
+      </div>
+
+      {/* Epoch playback + loss chart (after a run) */}
+      {snapshots.length > 0 && (
+        <>
           {/* Epoch scrubber */}
           {!isTraining && snapshots.length > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: 12,
@@ -232,6 +444,27 @@ export default function App() {
               }}>
                 {playing ? "⏸ Pause" : "▶ Play"}
               </button>
+
+              {/* Playback speed */}
+              <div style={{ display: "flex", gap: 4 }}>
+                {[0.5, 1, 2].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSpeed(s)}
+                    style={{
+                      padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                      cursor: "pointer", fontVariantNumeric: "tabular-nums",
+                      border: "0.5px solid",
+                      borderColor: speed === s ? "var(--accent-purple)" : "var(--color-border-secondary)",
+                      background: speed === s ? "rgba(124,111,247,0.15)" : "transparent",
+                      color: speed === s ? "#c9c2ff" : "var(--color-text-tertiary)",
+                    }}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+
               <input
                 type="range" min={0} max={snapshots.length - 1}
                 value={epochIdx}
@@ -280,5 +513,6 @@ export default function App() {
         </>
       )}
     </div>
+    </BeginnerContext.Provider>
   );
 }

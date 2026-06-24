@@ -53,13 +53,26 @@ class Trainer:
         test_loss = self.net.cross_entropy_loss(test_probs, one_hot(y_test, self.num_classes))
         test_acc = self.net.accuracy(test_probs, y_test)
 
+        layers = self.net.snapshot()
+
+        # Per-neuron mean activation on a sample batch — used by the frontend to
+        # flag "dead" ReLU neurons (mean activation ~ 0). Done after the metric
+        # forwards so it doesn't disturb the captured weight/grad state.
+        sample = X_train[: min(512, X_train.shape[0])]
+        self.net.forward(sample)
+        for layer_obj, layer_dict in zip(self.net.layers, layers):
+            acts = getattr(layer_obj, "a", None)
+            if acts is None:
+                acts = getattr(layer_obj, "probs", None)
+            layer_dict["mean_activation"] = np.mean(acts, axis=0).tolist()
+
         return {
             "epoch": epoch,
             "train_loss": train_loss,
             "train_accuracy": train_acc,
             "test_loss": test_loss,
             "test_accuracy": test_acc,
-            "layers": self.net.snapshot(),
+            "layers": layers,
         }
 
     def train(self, progress_callback=None) -> NeuralNetwork:
