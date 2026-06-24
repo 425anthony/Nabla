@@ -350,9 +350,10 @@ export default function App() {
       {beginner && (
         <div style={{
           display: "flex", alignItems: "flex-start", gap: 10,
-          marginBottom: 20, padding: "12px 14px", borderRadius: 10,
+          marginBottom: 20, padding: "12px 14px 12px 18px", borderRadius: 10,
           background: "rgba(124,111,247,0.08)",
           border: "1px solid rgba(124,111,247,0.30)",
+          borderLeft: "3px solid var(--accent-purple)",
           fontSize: 13, lineHeight: 1.5, color: "var(--color-text-secondary)",
         }}>
           <span style={{ fontSize: 15, lineHeight: 1.4 }}>💡</span>

@@ -205,17 +205,19 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
             const gradIntensity = gradLayer
               ? Math.min(1, gradLayer.dz_mean / maxGrad)
               : 0;
-            const liveFill = showGradients && snapshot
-              ? gradientColor(gradIntensity)
-              : neuronColor(li, layers);
-            // Dead neurons are gray regardless of the heatmap toggle.
-            const fill = dead ? DEAD_COLOR : liveFill;
-            // Soft colored glow; intensifies while training. Dead neurons barely glow.
+            // Neuron fill is always the layer's identity color (purple hidden,
+            // teal output, gray-blue input); dead neurons are gray. This holds
+            // in both normal and heatmap mode.
+            const fill = dead ? DEAD_COLOR : neuronColor(li, layers);
+            // The gradient heatmap is expressed through the GLOW (purple→amber by
+            // gradient), so the fill keeps its identity color.
             const glow = dead
               ? "drop-shadow(0 0 1px #000)"
-              : isTraining
-                ? `drop-shadow(0 0 6px ${fill}) drop-shadow(0 0 13px ${fill})`
-                : `drop-shadow(0 0 5px ${fill})`;
+              : showGradients && snapshot
+                ? `drop-shadow(0 0 ${4 + 9 * gradIntensity}px ${gradientColor(gradIntensity)})`
+                : isTraining
+                  ? `drop-shadow(0 0 6px ${fill}) drop-shadow(0 0 13px ${fill})`
+                  : `drop-shadow(0 0 5px ${fill})`;
 
             return (
               <g key={`${li}-${neuronIdx}`}>
@@ -314,7 +316,7 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
           background: "var(--color-background-secondary)",
           borderRadius: 8, fontSize: 12, color: "var(--color-text-secondary)",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
               <span style={{
                 width: 9, height: 9, borderRadius: "50%",
@@ -324,21 +326,21 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
               {deadInfo.totalDead} dead neuron{deadInfo.totalDead === 1 ? "" : "s"}
               <InfoTip term="dead_neurons" />
             </span>
-            <span style={{ color: "var(--color-text-tertiary)" }}>
-              {deadInfo.perLayer
-                .map((d) => `hidden ${d.li}: ${d.dead}/${d.total}`)
-                .join("   ·   ")}
-            </span>
             <button
               onClick={() => setDeadInfoOpen((o) => !o)}
               style={{
-                marginLeft: "auto", cursor: "pointer", fontSize: 11,
+                cursor: "pointer", fontSize: 11,
                 background: "transparent", color: "var(--accent-purple)",
                 border: "none", padding: 0, textDecoration: "underline",
               }}
             >
               {deadInfoOpen ? "hide" : "what's a dead neuron?"}
             </button>
+            <span style={{ marginLeft: "auto", color: "var(--color-text-tertiary)" }}>
+              {deadInfo.perLayer
+                .map((d) => `hidden ${d.li}: ${d.dead}/${d.total}`)
+                .join("   ·   ")}
+            </span>
           </div>
           {deadInfoOpen && (
             <p style={{ margin: "8px 0 0", lineHeight: 1.5, color: "var(--color-text-tertiary)" }}>
