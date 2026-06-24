@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Permit the compose frontend origin (nginx is published on :8080 below)
+      - ALLOWED_ORIGINS=http://localhost:8080
+    volumes:
+      # Persist the MNIST download across container restarts
+      - mnist-cache:/app/app/.mnist_cache
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser calls the backend directly, so this is the host-published
+        # backend URL (not the internal compose hostname).
+        VITE_API_URL: http://localhost:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mnist-cache:

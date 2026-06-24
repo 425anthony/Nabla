@@ -2,7 +2,7 @@
 
 A from-scratch neural network trained on MNIST with a live interactive visualizer. No PyTorch, no Keras — pure NumPy backpropagation with a React frontend that animates weight changes and gradient magnitudes epoch by epoch.
 
-**Live demo:** 
+**Live demo:** _coming soon — see [Deployment](#deployment)_
 
 ---
 
@@ -84,7 +84,7 @@ git clone https://github.com/425anthony/neural-net-visualizer
 cd neural-net-visualizer
 docker-compose up --build
 ```
-Open http://localhost:5173
+Then open **http://localhost:8080** (frontend); the backend runs on http://localhost:8000.
 
 **Without Docker:**
 ```bash
@@ -100,6 +100,45 @@ npm run dev
 ```
 
 MNIST data (~11MB) downloads automatically on first run.
+
+---
+
+## Deployment
+
+**Live demo:** _(URL goes here once deployed — e.g. `https://nabla-frontend.onrender.com`)_
+
+### Local (Docker Compose)
+
+```bash
+docker-compose up --build
+```
+
+| Service | URL | Notes |
+|---|---|---|
+| Frontend (nginx) | http://localhost:8080 | serves the built Vite app |
+| Backend (FastAPI) | http://localhost:8000 | `/health`, `/train`, … |
+
+The frontend's API base URL is baked in at build time via the `VITE_API_URL`
+build arg (set in `docker-compose.yml`). The backend's permitted CORS origins
+come from `ALLOWED_ORIGINS`. MNIST data persists in the `mnist-cache` volume.
+
+### Render (infrastructure-as-code)
+
+`render.yaml` defines both services — backend as a Dockerized **web service**,
+frontend as a **static site**.
+
+1. Push the repo to GitHub.
+2. In Render: **New + → Blueprint**, select the repo (Render reads `render.yaml`).
+3. After the first deploy, set these env vars (Render prompts — they're `sync: false`):
+   - **nabla-backend** → `ALLOWED_ORIGINS` = the frontend URL (e.g. `https://nabla-frontend.onrender.com`)
+   - **nabla-frontend** → `VITE_API_URL` = the backend URL (e.g. `https://nabla-backend.onrender.com`)
+4. `VITE_API_URL` is **build-time**, so after setting it redeploy the frontend
+   ("Clear build cache & deploy"). `ALLOWED_ORIGINS` is **runtime** — the backend
+   just restarts.
+
+> On Render's free plan, services sleep when idle (first request ~50s) and have
+> ephemeral disk, so MNIST re-downloads after a restart — handled automatically
+> on the first training run.
 
 ---
 

@@ -25,6 +25,10 @@ export interface TrainConfig {
   data_fraction: number;
 }
 
+// Backend base URL — baked in at build time via VITE_API_URL so the same
+// build runs locally and in production; falls back to localhost for dev.
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
 // The backend emits train_accuracy/test_accuracy and per-layer grad_magnitude.
 // Map those onto the field names the components consume.
 function normalizeSnapshot(raw: any): EpochSnapshot {
@@ -57,7 +61,7 @@ export function useTraining() {
 
     try {
       // 1. Kick off the job — backend returns a job_id immediately.
-      const startRes = await fetch("http://localhost:8000/train", {
+      const startRes = await fetch(`${API_URL}/train`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
@@ -66,7 +70,7 @@ export function useTraining() {
       const { job_id } = await startRes.json();
 
       // 2. Open the SSE stream for that job and read epoch snapshots.
-      const res = await fetch(`http://localhost:8000/train/${job_id}/stream`);
+      const res = await fetch(`${API_URL}/train/${job_id}/stream`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (!res.body) throw new Error("No response body");
 

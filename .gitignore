@@ -1,0 +1,33 @@
+# ── OS / editor ──────────────────────────────────────────────
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# ── Python (backend) ─────────────────────────────────────────
+.venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# MNIST data — re-downloads automatically on first run
+backend/app/.mnist_cache/
+
+# ── Node / Vite (frontend) ───────────────────────────────────
+node_modules/
+dist/
+frontend/dist/
+*.local
+
+# ── Environment files (never commit secrets) ─────────────────
+.env
+.env.*
+!.env.example
+
+# ── Claude Code local settings ───────────────────────────────
+.claude/settings.local.json
+
+# Orphan root lockfile (no root package.json)
+/package-lock.json

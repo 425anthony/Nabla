@@ -1,0 +1,140 @@
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Surfaces — body is near-black; cards sit slightly lighter */
+  --color-background-primary: #14141d;    /* card surface */
+  --color-background-secondary: #101019;  /* config / inspect panels */
+  --color-background-input: #0c0c14;
+
+  /* Text — light on dark, three muted tiers */
+  --color-text-primary: #ececf4;
+  --color-text-secondary: #9b9bb2;
+  --color-text-tertiary: #6a6a80;
+  --color-text-success: #00d4aa;
+
+  /* Borders */
+  --color-border-secondary: #2a2a3a;
+  --color-border-tertiary: #1e1e2b;
+
+  /* Accents */
+  --accent-purple: #7c6ff7;
+  --accent-teal: #00d4aa;
+  --accent-amber: #f59e0b;
+  --accent-coral: #ff7a5c;
+
+  /* Button/state tokens still referenced by inline styles elsewhere */
+  --color-background-info: rgba(124, 111, 247, 0.06);
+  --color-text-info: #c9c2ff;
+  --color-border-info: var(--accent-purple);
+  --color-background-danger: rgba(248, 113, 113, 0.08);
+  --color-text-danger: #f87171;
+  --color-border-danger: #f87171;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100vh;
+  background: #0a0a0f;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+/* ── Start/Stop button: gradient border + hover glow ───────────────── */
+.nabla-btn {
+  padding: 8px 22px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  color: var(--color-text-info);
+  border: 1px solid transparent;
+  /* inner fill (padding-box) over a gradient (border-box) = gradient border */
+  background:
+    linear-gradient(var(--color-background-primary), var(--color-background-primary)) padding-box,
+    linear-gradient(135deg, #7c6ff7, #00d4aa) border-box;
+  transition: box-shadow 0.25s ease, transform 0.08s ease;
+}
+.nabla-btn:hover { box-shadow: 0 0 20px rgba(124, 111, 247, 0.55); }
+.nabla-btn:active { transform: translateY(1px); }
+
+.nabla-btn--stop {
+  color: var(--color-text-danger);
+  background:
+    linear-gradient(var(--color-background-primary), var(--color-background-primary)) padding-box,
+    linear-gradient(135deg, #f87171, #f59e0b) border-box;
+}
+.nabla-btn--stop:hover { box-shadow: 0 0 20px rgba(248, 113, 113, 0.5); }
+
+/* ── Config inputs ─────────────────────────────────────────────────── */
+.nabla-input {
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-background-input);
+  border: 1px solid var(--color-border-secondary);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.nabla-input:focus {
+  outline: none;
+  border-color: var(--accent-purple);
+  box-shadow: 0 0 0 2px rgba(124, 111, 247, 0.25);
+}
+.nabla-input:disabled { opacity: 0.45; }
+
+/* ── Network diagram card: thin glowing purple border ──────────────── */
+.nabla-diagram-card {
+  border: 1px solid rgba(124, 111, 247, 0.30);
+  box-shadow: 0 0 0 1px rgba(124, 111, 247, 0.06), 0 0 28px rgba(124, 111, 247, 0.12);
+}
+
+/* ── Recharts dark legibility ──────────────────────────────────────── */
+.recharts-cartesian-axis-tick-value { fill: var(--color-text-tertiary); }
+.recharts-legend-item-text { color: var(--color-text-secondary) !important; }
+
+/* Range input accent */
+input[type="range"] { accent-color: var(--accent-purple); }
+
+/* ── Toggle switch (gradient heatmap) ──────────────────────────────── */
+.nabla-toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.nabla-toggle {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 38px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: #20202c;
+  border: 1px solid #34344a;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.nabla-toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #9b9bb2;
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.nabla-toggle-input:checked + .nabla-toggle {
+  background: rgba(124, 111, 247, 0.35);
+  border-color: var(--accent-purple);
+}
+.nabla-toggle-input:checked + .nabla-toggle::after {
+  transform: translateX(16px);
+  background: var(--accent-purple);
+  box-shadow: 0 0 8px rgba(124, 111, 247, 0.7);
+}
+.nabla-toggle-input:focus-visible + .nabla-toggle {
+  box-shadow: 0 0 0 2px rgba(124, 111, 247, 0.35);
+}

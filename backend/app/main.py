@@ -1,11 +1,12 @@
 import json
+import os
 import asyncio
 import uuid
 from typing import AsyncGenerator
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import threading
 from .network import gradient_check, NeuralNetwork
 from .data import load_mnist
@@ -14,15 +15,30 @@ import numpy as np
 
 app = FastAPI(title="Nabla API")
 
+# Allowed CORS origins are configurable so the deployed frontend's URL can be
+# permitted in production. Comma-separated list via ALLOWED_ORIGINS; defaults to
+# local dev origins (Vite dev server + the docker-compose nginx port).
+_default_origins = "http://localhost:5173,http://localhost:3000,http://localhost:8080"
+allow_origins = [
+    o.strip()
+    for o in os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # In-memory job store  { job_id: { "status": ..., "snapshots": [...], "config": ... } }
 jobs: dict[str, dict] = {}
+
+# Resource guards for the public deployment (Render free tier ~512 MB).
+MAX_LAYERS = 8          # total layers including input/output
+MAX_LAYER_SIZE = 2048   # neurons per layer
+MAX_ACTIVE_JOBS = 2     # concurrent training jobs
 
 
 # ---------------------------------------------------------------------------
@@ -36,8 +52,20 @@ class TrainRequest(BaseModel):
     momentum: float = Field(default=0.9, ge=0.0, le=0.999)
     batch_size: int = Field(default=256, ge=16, le=1024)
     epochs: int = Field(default=20, ge=1, le=100)
-    data_fraction: float = Field(default=1.0, gt=0.0, le=1.0)
+    # Capped low so a raw API call can't trigger a full 60k MNIST run and OOM.
+    data_fraction: float = Field(default=0.1, gt=0.0, le=0.2)
     data_dir: str = Field(default="./data")
+
+    @field_validator("layer_sizes")
+    @classmethod
+    def _validate_layer_sizes(cls, v: list[int]) -> list[int]:
+        if len(v) < 2:
+            raise ValueError("layer_sizes must have at least 2 layers (input and output)")
+        if len(v) > MAX_LAYERS:
+            raise ValueError(f"layer_sizes may have at most {MAX_LAYERS} layers")
+        if any(n < 1 or n > MAX_LAYER_SIZE for n in v):
+            raise ValueError(f"each layer size must be between 1 and {MAX_LAYER_SIZE}")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -46,12 +74,15 @@ class TrainRequest(BaseModel):
 
 def _run_training(job_id: str, config: dict):
     jobs[job_id]["status"] = "running"
-    trainer = Trainer(config)
 
     def on_epoch(snapshot):
         jobs[job_id]["snapshots"].append(snapshot)
 
     try:
+        # Build inside the try: a bad config (e.g. unknown activation) raises
+        # here, and we must record it as an error rather than let the thread
+        # die silently and leave the job stuck "running" (SSE would hang).
+        trainer = Trainer(config)
         trainer.train(progress_callback=on_epoch)
         jobs[job_id]["status"] = "complete"
     except Exception as e:
@@ -66,6 +97,13 @@ def _run_training(job_id: str, config: dict):
 @app.post("/train")
 async def start_training(req: TrainRequest):
     """Kick off a training job and return a job_id immediately."""
+    active = sum(1 for j in jobs.values() if j["status"] in ("pending", "running"))
+    if active >= MAX_ACTIVE_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many active training jobs (max {MAX_ACTIVE_JOBS}). Try again shortly.",
+        )
+
     job_id = str(uuid.uuid4())
     config = req.model_dump()
     jobs[job_id] = {"status": "pending", "snapshots": [], "config": config}
@@ -95,8 +133,10 @@ async def stream_training(job_id: str):
                 sent += 1
 
             if job["status"] in ("complete", "error"):
-                status_event = json.dumps({"event": job["status"]})
-                yield f"data: {status_event}\n\n"
+                payload = {"event": job["status"]}
+                if job["status"] == "error":
+                    payload["detail"] = job.get("error", "Training failed")
+                yield f"data: {json.dumps(payload)}\n\n"
                 break
 
             await asyncio.sleep(0.2)
