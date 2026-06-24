@@ -1,6 +1,6 @@
 import numpy as np
 
-from .network import NeuralNetwork
+from .network import NeuralNetwork, _finite, _clean
 from .data import load_mnist, make_batches
 
 
@@ -64,14 +64,16 @@ class Trainer:
             acts = getattr(layer_obj, "a", None)
             if acts is None:
                 acts = getattr(layer_obj, "probs", None)
-            layer_dict["mean_activation"] = np.mean(acts, axis=0).tolist()
+            layer_dict["mean_activation"] = _clean(np.mean(acts, axis=0))
 
+        # _finite() turns NaN/inf into None so the SSE JSON stays valid even if
+        # training has diverged (extreme hyperparameters).
         return {
             "epoch": epoch,
-            "train_loss": train_loss,
-            "train_accuracy": train_acc,
-            "test_loss": test_loss,
-            "test_accuracy": test_acc,
+            "train_loss": _finite(train_loss),
+            "train_accuracy": _finite(train_acc),
+            "test_loss": _finite(test_loss),
+            "test_accuracy": _finite(test_acc),
             "layers": layers,
         }
 
@@ -100,6 +102,14 @@ class Trainer:
                 snapshot = self._epoch_snapshot(
                     epoch, X_train, y_train, y_train_oh, X_test, y_test
                 )
+                # A None loss means it was NaN/inf — training has diverged. Stop
+                # with a clear, actionable message instead of streaming garbage.
+                if snapshot["train_loss"] is None or snapshot["test_loss"] is None:
+                    raise ValueError(
+                        f"Training diverged at epoch {epoch}: the loss became NaN or "
+                        f"infinite. The learning rate ({self.lr}) is likely too high — "
+                        "try a smaller value."
+                    )
                 progress_callback(snapshot)
 
         return self.net

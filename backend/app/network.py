@@ -1,6 +1,21 @@
 import numpy as np
 
 
+# Largest gradient magnitude applied per update — clamps extreme learning rates
+# so a single step can't blow the weights up to inf/NaN.
+GRAD_CLIP = 5.0
+
+
+def _finite(x):
+    """Return x if finite, else None (so JSON serializes null instead of NaN)."""
+    return x if np.isfinite(x) else None
+
+
+def _clean(arr: np.ndarray) -> list:
+    """ndarray → nested list with non-finite entries replaced by None (JSON-safe)."""
+    return np.where(np.isfinite(arr), arr, None).tolist()
+
+
 # ---------------------------------------------------------------------------
 # Activations
 # ---------------------------------------------------------------------------
@@ -78,11 +93,11 @@ class DenseLayer:
     def snapshot(self) -> dict:
         """Serialisable state for one training epoch."""
         return {
-            "W": self.W.tolist(),
-            "b": self.b.tolist(),
-            "dW": self.dW.tolist() if self.dW is not None else None,
-            "db": self.db.tolist() if self.db is not None else None,
-            "grad_magnitude": self.grad_magnitude,
+            "W": _clean(self.W),
+            "b": _clean(self.b),
+            "dW": _clean(self.dW) if self.dW is not None else None,
+            "db": _clean(self.db) if self.db is not None else None,
+            "grad_magnitude": _finite(self.grad_magnitude),
             "activation": self.activation,
             "shape": [int(self.W.shape[0]), int(self.W.shape[1])],
         }
@@ -125,11 +140,11 @@ class SoftmaxOutputLayer:
 
     def snapshot(self) -> dict:
         return {
-            "W": self.W.tolist(),
-            "b": self.b.tolist(),
-            "dW": self.dW.tolist() if self.dW is not None else None,
-            "db": self.db.tolist() if self.db is not None else None,
-            "grad_magnitude": self.grad_magnitude,
+            "W": _clean(self.W),
+            "b": _clean(self.b),
+            "dW": _clean(self.dW) if self.dW is not None else None,
+            "db": _clean(self.db) if self.db is not None else None,
+            "grad_magnitude": _finite(self.grad_magnitude),
             "activation": self.activation,
             "shape": [int(self.W.shape[0]), int(self.W.shape[1])],
         }
@@ -171,8 +186,11 @@ class NeuralNetwork:
             if not hasattr(layer, "vW"):
                 layer.vW = np.zeros_like(layer.W)
                 layer.vb = np.zeros_like(layer.b)
-            layer.vW = momentum * layer.vW - lr * layer.dW
-            layer.vb = momentum * layer.vb - lr * layer.db
+            # Clip gradients so an extreme learning rate can't diverge to inf/NaN.
+            dW = np.clip(layer.dW, -GRAD_CLIP, GRAD_CLIP)
+            db = np.clip(layer.db, -GRAD_CLIP, GRAD_CLIP)
+            layer.vW = momentum * layer.vW - lr * dW
+            layer.vb = momentum * layer.vb - lr * db
             layer.W += layer.vW
             layer.b += layer.vb
 

@@ -11,9 +11,12 @@ interface Props {
 }
 
 const W = 700;
-const H = 340;
+const H = 360;
 const NODE_R = 10;
 const MAX_DISPLAY_NODES = 8; // cap per layer for visual clarity
+const NODE_AREA_H = 280;     // vertical band the neurons occupy (leaves room below for labels)
+const DEAD_LABEL_Y = 322;    // "X dead" count row
+const LABEL_Y = 344;         // layer-name row
 
 // Endpoints of the gradient heatmap scale (also used by the legend):
 // purple (low) → amber (high), which pops on the dark surface.
@@ -37,7 +40,7 @@ function weightColor(w: number): string {
 
 // Per-layer neuron base color
 function neuronColor(li: number, layers: number): string {
-  if (li === 0) return "#5b6b8c";           // input: dim gray-blue
+  if (li === 0) return "#6b8cba";           // input: cool steel blue (distinct from dead gray)
   if (li === layers - 1) return "#00d4aa";  // output: teal
   return "#7c6ff7";                          // hidden: purple/violet
 }
@@ -55,7 +58,7 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
   const positions = useMemo(() => {
     return layerSizes.map((size, li) => {
       const display = Math.min(size, MAX_DISPLAY_NODES);
-      const yStep = H / (display + 1);
+      const yStep = NODE_AREA_H / (display + 1);
       const x = xStep * (li + 1);
       return Array.from({ length: display }, (_, ni) => ({
         x,
@@ -263,7 +266,7 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
           <text
             key={li}
             x={xStep * (li + 1)}
-            y={H - 8}
+            y={LABEL_Y}
             textAnchor="middle"
             fontSize={11}
             fill="var(--color-text-tertiary)"
@@ -278,7 +281,7 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
           <text
             key={`dead-${d.li}`}
             x={xStep * (d.li + 1)}
-            y={H - 22}
+            y={DEAD_LABEL_Y}
             textAnchor="middle"
             fontSize={10}
             fontWeight={600}
@@ -329,18 +332,26 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
             <button
               onClick={() => setDeadInfoOpen((o) => !o)}
               style={{
-                cursor: "pointer", fontSize: 11,
+                marginLeft: "auto", cursor: "pointer", fontSize: 11,
                 background: "transparent", color: "var(--accent-purple)",
                 border: "none", padding: 0, textDecoration: "underline",
               }}
             >
               {deadInfoOpen ? "hide" : "what's a dead neuron?"}
             </button>
-            <span style={{ marginLeft: "auto", color: "var(--color-text-tertiary)" }}>
-              {deadInfo.perLayer
-                .map((d) => `hidden ${d.li}: ${d.dead}/${d.total}`)
-                .join("   ·   ")}
-            </span>
+          </div>
+
+          {/* Per-layer breakdown — wraps into a small grid so it never overflows */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(116px, 1fr))",
+            gap: "4px 12px", marginTop: 8,
+            fontSize: 11, color: "var(--color-text-tertiary)",
+            fontVariantNumeric: "tabular-nums",
+          }}>
+            {deadInfo.perLayer.map((d) => (
+              <span key={d.li}>hidden {d.li}: {d.dead}/{d.total}</span>
+            ))}
           </div>
           {deadInfoOpen && (
             <p style={{ margin: "8px 0 0", lineHeight: 1.5, color: "var(--color-text-tertiary)" }}>
