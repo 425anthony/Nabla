@@ -105,7 +105,6 @@ MNIST data (~11MB) downloads automatically on first run.
 
 ## Deployment
 
-**Live demo:** _(URL goes here once deployed — e.g. `https://nabla-frontend.onrender.com`)_
 
 ### Local (Docker Compose)
 
