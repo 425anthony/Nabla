@@ -149,6 +149,13 @@ export default function App() {
     return "This network starts out guessing randomly. Press “Start training” and watch the diagram below come alive as it learns to read handwritten digits.";
   })();
 
+  // Overfitting: training accuracy meaningfully ahead of test accuracy.
+  const overfitGap =
+    currentSnap && currentSnap.train_acc != null && currentSnap.test_acc != null
+      ? currentSnap.train_acc - currentSnap.test_acc
+      : 0;
+  const showOverfit = beginner && overfitGap > 0.05;
+
   return (
     <BeginnerContext.Provider value={beginner}>
     <div style={{
@@ -358,6 +365,29 @@ export default function App() {
         }}>
           <span style={{ fontSize: 15, lineHeight: 1.4 }}>💡</span>
           <span>{beginnerStatus}</span>
+        </div>
+      )}
+
+      {/* Beginner mode: overfitting warning (train acc well above test acc) */}
+      {showOverfit && (
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 10,
+          marginBottom: 20, padding: "12px 14px 12px 18px", borderRadius: 10,
+          background: "rgba(245,158,11,0.08)",
+          border: "1px solid rgba(245,158,11,0.30)",
+          borderLeft: "3px solid var(--accent-amber)",
+          fontSize: 13, lineHeight: 1.5, color: "var(--color-text-secondary)",
+        }}>
+          <span style={{ fontSize: 15, lineHeight: 1.4 }}>⚠️</span>
+          <span>
+            <strong>Possible overfitting.</strong> The network gets{" "}
+            {Math.round((currentSnap?.train_acc ?? 0) * 100)}% of the images it trained on
+            right, but only {Math.round((currentSnap?.test_acc ?? 0) * 100)}% of unseen ones
+            — a gap of {Math.round(overfitGap * 100)}%. That usually means it's starting to
+            memorize the training images instead of learning general patterns that work on
+            new digits. Training on more data (higher data fraction), for fewer epochs, or
+            with a smaller network typically helps.
+          </span>
         </div>
       )}
 
