@@ -2,7 +2,6 @@
 
 A from-scratch neural network trained on MNIST with a live interactive visualizer. No PyTorch, no Keras — pure NumPy backpropagation with a React frontend that animates weight changes and gradient magnitudes epoch by epoch.
 
-**Live demo:** _coming soon — see [Deployment](#deployment)_
 
 ---
 
