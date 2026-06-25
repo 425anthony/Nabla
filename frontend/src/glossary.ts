@@ -36,6 +36,10 @@ export const GLOSSARY = {
     title: "Test accuracy",
     text: "The percentage of unseen images the network gets right — ones it never trained on. This is the honest measure of whether it truly learned to read digits, rather than just memorizing the examples it saw.",
   },
+  optimizer: {
+    title: "Optimizer",
+    text: "The recipe the network uses to turn gradients into weight updates. SGD is the classic approach — steady but slow. Adam is smarter about adjusting each weight individually and usually trains faster.",
+  },
   backpropagation: {
     title: "Backpropagation",
     text: "The algorithm that lets the network learn from mistakes. After each guess it works backwards from the error to figure out how every internal weight should change to be a little less wrong. Repeated over and over, this is how the network improves.",

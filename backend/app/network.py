@@ -180,19 +180,49 @@ class NeuralNetwork:
         for layer in reversed(self.layers[:-1]):
             delta = layer.backward(delta)
 
-    def update_weights(self, lr: float, momentum: float = 0.9):
-        """SGD with momentum. Velocity stored on each layer."""
+    def update_weights(self, lr: float, momentum: float = 0.9,
+                       optimizer: str = "sgd",
+                       beta1: float = 0.9, beta2: float = 0.999, eps: float = 1e-8):
+        """
+        Update every layer's weights. Per-layer optimizer state is stored on the
+        layer objects. Supports:
+          - "sgd":  SGD with momentum (velocity vW/vb)
+          - "adam": Adam with bias-corrected first/second moments
+        """
         for layer in self.layers:
-            if not hasattr(layer, "vW"):
-                layer.vW = np.zeros_like(layer.W)
-                layer.vb = np.zeros_like(layer.b)
             # Clip gradients so an extreme learning rate can't diverge to inf/NaN.
             dW = np.clip(layer.dW, -GRAD_CLIP, GRAD_CLIP)
             db = np.clip(layer.db, -GRAD_CLIP, GRAD_CLIP)
-            layer.vW = momentum * layer.vW - lr * dW
-            layer.vb = momentum * layer.vb - lr * db
-            layer.W += layer.vW
-            layer.b += layer.vb
+
+            if optimizer == "adam":
+                if not hasattr(layer, "adam_t"):
+                    layer.adam_mW = np.zeros_like(layer.W)
+                    layer.adam_vW = np.zeros_like(layer.W)
+                    layer.adam_mb = np.zeros_like(layer.b)
+                    layer.adam_vb = np.zeros_like(layer.b)
+                    layer.adam_t = 0
+                layer.adam_t += 1
+                t = layer.adam_t
+                # First/second moment estimates
+                layer.adam_mW = beta1 * layer.adam_mW + (1 - beta1) * dW
+                layer.adam_vW = beta2 * layer.adam_vW + (1 - beta2) * (dW * dW)
+                layer.adam_mb = beta1 * layer.adam_mb + (1 - beta1) * db
+                layer.adam_vb = beta2 * layer.adam_vb + (1 - beta2) * (db * db)
+                # Bias-corrected estimates
+                mW_hat = layer.adam_mW / (1 - beta1 ** t)
+                vW_hat = layer.adam_vW / (1 - beta2 ** t)
+                mb_hat = layer.adam_mb / (1 - beta1 ** t)
+                vb_hat = layer.adam_vb / (1 - beta2 ** t)
+                layer.W -= lr * mW_hat / (np.sqrt(vW_hat) + eps)
+                layer.b -= lr * mb_hat / (np.sqrt(vb_hat) + eps)
+            else:  # sgd with momentum
+                if not hasattr(layer, "vW"):
+                    layer.vW = np.zeros_like(layer.W)
+                    layer.vb = np.zeros_like(layer.b)
+                layer.vW = momentum * layer.vW - lr * dW
+                layer.vb = momentum * layer.vb - lr * db
+                layer.W += layer.vW
+                layer.b += layer.vb
 
     def cross_entropy_loss(self, probs: np.ndarray, y_onehot: np.ndarray) -> float:
         eps = 1e-12

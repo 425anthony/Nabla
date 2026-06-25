@@ -25,6 +25,7 @@ export interface TrainConfig {
   learning_rate: number;
   momentum: number;
   data_fraction: number;
+  optimizer: "sgd" | "adam";
 }
 
 // Backend base URL — baked in at build time via VITE_API_URL so the same

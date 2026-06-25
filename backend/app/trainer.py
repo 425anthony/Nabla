@@ -37,6 +37,7 @@ class Trainer:
         self.batch_size = config["batch_size"]
         self.epochs = config["epochs"]
         self.data_fraction = config.get("data_fraction", 1.0)
+        self.optimizer = config.get("optimizer", "sgd")
         self.num_classes = self.layer_sizes[-1]
 
         self.net = NeuralNetwork(self.layer_sizes, self.hidden_activation)
@@ -96,7 +97,7 @@ class Trainer:
             for x_batch, y_batch in make_batches(X_train, y_train, self.batch_size):
                 self.net.forward(x_batch)
                 self.net.backward(one_hot(y_batch, self.num_classes))
-                self.net.update_weights(self.lr, self.momentum)
+                self.net.update_weights(self.lr, self.momentum, optimizer=self.optimizer)
 
             if progress_callback is not None:
                 snapshot = self._epoch_snapshot(

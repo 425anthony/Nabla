@@ -10,12 +10,14 @@ A from-scratch neural network trained on MNIST with a live interactive visualize
 - Trains a configurable feedforward network on MNIST (60k images, 10 classes)
 - Streams training progress live to the browser via Server-Sent Events
 - **Architecture builder** — add/remove hidden layers and set each layer's neuron count with sliders; the network diagram updates as a live preview before you train (up to 6 hidden layers)
+- **Optimizer choice** — train with SGD-with-momentum or Adam and compare how fast they converge
 - Dark-themed SVG network visualizer with glowing neurons, where edge color encodes weight sign/magnitude
 - **Gradient heatmap mode** — colors each neuron's glow by its ∂L/∂z value so you can watch vanishing gradients in real time
 - **Dead neuron detector** — flags dead ReLU units (gray), with a per-layer count and a plain-English explanation
 - Epoch scrubber with **playback speed control** (0.5× / 1× / 2×) and smooth animated weight transitions between epochs
 - Click any neuron to inspect its weights, bias, incoming-weight bar chart, gradient, and mean activation
 - **Beginner mode** — an ⓘ glossary tooltip on every technical term, a live plain-English status of what's happening each epoch, and an overfitting warning when train accuracy pulls ahead of test accuracy
+- **Live digit drawing** — after training, draw a digit on a canvas; it's preprocessed to MNIST format (centered, 28×28, white-on-black) and the network predicts it, shown as a probability bar chart over all 10 digits
 - Gradient check endpoint: verifies backprop correctness via finite differences
 
 ---
@@ -63,10 +65,20 @@ Weight gradients:
 
 $$\frac{\partial \mathcal{L}}{\partial W^{(l)}} = {a^{(l-1)}}^T \delta^{(l)}$$
 
-### SGD with momentum
+### Optimizers
+
+**SGD with momentum:**
 
 $$v_W \leftarrow \mu v_W - \eta \frac{\partial \mathcal{L}}{\partial W}$$
 $$W \leftarrow W + v_W$$
+
+**Adam** — per-parameter first/second moment estimates with bias correction ($\beta_1 = 0.9$, $\beta_2 = 0.999$, $\varepsilon = 10^{-8}$):
+
+$$m \leftarrow \beta_1 m + (1-\beta_1)\, g, \qquad v \leftarrow \beta_2 v + (1-\beta_2)\, g^2$$
+$$\hat{m} = \frac{m}{1 - \beta_1^{\,t}}, \qquad \hat{v} = \frac{v}{1 - \beta_2^{\,t}}$$
+$$W \leftarrow W - \eta \, \frac{\hat{m}}{\sqrt{\hat{v}} + \varepsilon}$$
+
+Gradients are clipped to a fixed range before either update so extreme learning rates can't diverge to NaN/inf.
 
 ### Gradient check
 
@@ -157,6 +169,7 @@ frontend as a **static site**.
 | GET | `/train/{job_id}/status` | Job status + epochs completed |
 | GET | `/train/{job_id}/snapshots` | All snapshots after training |
 | GET | `/train/{job_id}/snapshots/{epoch}` | Snapshot at specific epoch |
+| POST | `/predict` | Predict the digit for a 784-px drawing using the most recently trained network (422 if none) |
 | POST | `/gradient-check` | Finite-difference gradient verification |
 | GET | `/health` | Health check |
 
@@ -176,9 +189,9 @@ nabla/
 │   └── app/
 │       ├── __init__.py
 │       ├── data.py             # MNIST download + cache + batching
-│       ├── network.py          # DenseLayer, SoftmaxOutputLayer, NeuralNetwork, gradient_check, grad clamping
+│       ├── network.py          # DenseLayer, SoftmaxOutputLayer, NeuralNetwork, SGD + Adam, gradient_check, grad clamping
 │       ├── trainer.py          # Training loop, one-hot, snapshot export, dead-neuron stats
-│       └── main.py             # FastAPI app, SSE streaming, job store, request validation, CORS
+│       └── main.py             # FastAPI app, SSE streaming, /predict, job store, validation, CORS
 └── frontend/
     ├── Dockerfile
     ├── nginx.conf              # SPA serving for the production image
@@ -190,12 +203,13 @@ nabla/
         ├── index.css           # Dark theme tokens + component styles (buttons, toggle, inputs)
         ├── vite-env.d.ts       # VITE_API_URL typing
         ├── glossary.ts         # Plain-English definitions for the beginner-mode tooltips
-        ├── App.tsx             # Layout, config panel, architecture builder, controls,
-        │                       #   beginner panels, loss/accuracy chart, scrubber + speed control
+        ├── App.tsx             # Layout, config panel (incl. optimizer), architecture builder,
+        │                       #   controls, beginner panels, loss/accuracy chart, scrubber + speed control
         ├── hooks/
         │   └── useTraining.ts  # POST /train → SSE stream, snapshot normalization
         └── components/
             ├── NetworkDiagram.tsx   # SVG network: glowing/dead neurons, weight & gradient coloring, inspect panel
+            ├── DrawingCanvas.tsx    # Draw-a-digit canvas, MNIST preprocessing, /predict + probability bars
             └── InfoTip.tsx          # ⓘ glossary tooltip + beginner-mode context
 ```
 

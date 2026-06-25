@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: TrainConfig = {
   learning_rate: 0.01,
   momentum: 0.9,
   data_fraction: 0.1,
+  optimizer: "sgd",
 };
 
 export default function App() {
@@ -237,6 +238,37 @@ export default function App() {
           </label>
           );
         })}
+
+        {/* Optimizer selector */}
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+            optimizer<InfoTip term="optimizer" />
+          </span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["sgd", "adam"] as const).map((opt) => {
+              const active = config.optimizer === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => setConfig((c) => ({ ...c, optimizer: opt }))}
+                  disabled={isTraining}
+                  style={{
+                    flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 13,
+                    cursor: isTraining ? "default" : "pointer",
+                    border: "1px solid",
+                    borderColor: active ? "var(--accent-purple)" : "var(--color-border-secondary)",
+                    background: active ? "rgba(124,111,247,0.15)" : "transparent",
+                    color: active ? "#c9c2ff" : "var(--color-text-tertiary)",
+                    fontWeight: active ? 600 : 400,
+                    opacity: isTraining ? 0.5 : 1,
+                  }}
+                >
+                  {opt === "sgd" ? "SGD" : "Adam"}
+                </button>
+              );
+            })}
+          </div>
+        </label>
       </div>
 
       {/* Architecture builder */}
@@ -357,15 +389,13 @@ export default function App() {
       {/* Beginner mode: plain-English annotation panel (live status) */}
       {beginner && (
         <div style={{
-          display: "flex", alignItems: "flex-start", gap: 10,
           marginBottom: 20, padding: "12px 14px 12px 18px", borderRadius: 10,
           background: "rgba(124,111,247,0.08)",
           border: "1px solid rgba(124,111,247,0.30)",
           borderLeft: "3px solid var(--accent-purple)",
           fontSize: 13, lineHeight: 1.5, color: "var(--color-text-secondary)",
         }}>
-          <span style={{ fontSize: 15, lineHeight: 1.4 }}>💡</span>
-          <span>{beginnerStatus}</span>
+          {beginnerStatus}
         </div>
       )}
 
@@ -558,7 +588,7 @@ export default function App() {
           background: "var(--color-background-primary)",
           fontSize: 13, color: "var(--color-text-tertiary)", textAlign: "center",
         }}>
-          ✏️ Train the network first to enable digit drawing.
+          Train the network first to enable digit drawing.
         </div>
       )}
     </div>

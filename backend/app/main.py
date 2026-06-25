@@ -2,7 +2,7 @@ import json
 import os
 import asyncio
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -59,6 +59,7 @@ class TrainRequest(BaseModel):
     epochs: int = Field(default=20, ge=1, le=100)
     # Capped low so a raw API call can't trigger a full 60k MNIST run and OOM.
     data_fraction: float = Field(default=0.1, gt=0.0, le=0.2)
+    optimizer: Literal["sgd", "adam"] = "sgd"
     data_dir: str = Field(default="./data")
 
     @field_validator("layer_sizes")
