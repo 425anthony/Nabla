@@ -181,6 +181,19 @@ export function NetworkDiagram({ layerSizes, snapshot, showGradients, isTraining
         {/* Edges — stroke/width/opacity set via style so they animate (CSS
             transition) smoothly as the scrubber moves between epochs. */}
         {edges.map((e, i) => {
+          // Pre-training preview (no snapshot): there are no weights yet, so draw
+          // uniform dim teal-gray edges so the architecture is clearly visible.
+          if (!snapshot) {
+            return (
+              <line
+                key={i}
+                x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2}
+                stroke="#6f9a91"
+                strokeWidth={0.8}
+                opacity={0.4}
+              />
+            );
+          }
           const opacity = Math.min(1, Math.abs(e.weight) / maxW);
           const col = weightColor(e.weight);
           return (

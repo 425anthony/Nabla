@@ -40,6 +40,11 @@ MAX_LAYERS = 8          # total layers including input/output
 MAX_LAYER_SIZE = 2048   # neurons per layer
 MAX_ACTIVE_JOBS = 2     # concurrent training jobs
 
+# Most recently trained network, kept in memory so /predict can run a forward
+# pass on it. Guarded by a lock because forward() mutates per-layer caches.
+latest_model: NeuralNetwork | None = None
+model_lock = threading.Lock()
+
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -73,6 +78,7 @@ class TrainRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _run_training(job_id: str, config: dict):
+    global latest_model
     jobs[job_id]["status"] = "running"
 
     def on_epoch(snapshot):
@@ -84,6 +90,7 @@ def _run_training(job_id: str, config: dict):
         # die silently and leave the job stuck "running" (SSE would hang).
         trainer = Trainer(config)
         trainer.train(progress_callback=on_epoch)
+        latest_model = trainer.net          # available to /predict
         jobs[job_id]["status"] = "complete"
     except Exception as e:
         jobs[job_id]["status"] = "error"
@@ -191,6 +198,34 @@ async def run_gradient_check():
     y = np.random.randint(0, 10, 8)
     result = gradient_check(net, x, one_hot(y))
     return result
+
+
+class PredictRequest(BaseModel):
+    pixels: list[float] = Field(..., description="784 pixel values, normalized to [0, 1]")
+
+    @field_validator("pixels")
+    @classmethod
+    def _check_pixels(cls, v: list[float]) -> list[float]:
+        if len(v) != 784:
+            raise ValueError("pixels must be a 784-length array (a 28x28 image flattened)")
+        return v
+
+
+@app.post("/predict")
+async def predict(req: PredictRequest):
+    """Run a forward pass on the most recently trained network for one image."""
+    if latest_model is None:
+        raise HTTPException(
+            status_code=422,
+            detail="No trained network yet — train the network first, then draw a digit.",
+        )
+    x = np.clip(np.array(req.pixels, dtype=np.float32), 0.0, 1.0).reshape(1, 784)
+    with model_lock:
+        probs = latest_model.forward(x)[0]
+    return {
+        "probabilities": [float(p) for p in probs],
+        "prediction": int(np.argmax(probs)),
+    }
 
 
 @app.get("/health")

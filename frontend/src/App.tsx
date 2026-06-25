@@ -5,6 +5,7 @@ import {
 import { useTraining, type TrainConfig } from "./hooks/useTraining";
 import { NetworkDiagram } from "./components/NetworkDiagram";
 import { InfoTip, BeginnerContext } from "./components/InfoTip";
+import { DrawingCanvas } from "./components/DrawingCanvas";
 
 const DEFAULT_CONFIG: TrainConfig = {
   layer_sizes: [784, 128, 64, 10],
@@ -447,8 +448,11 @@ export default function App() {
               </div>
             </div>
         ) : (
-          <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 16 }}>
-            Architecture preview: {config.layer_sizes.join(" → ")} — press “Start training” to run.
+          <div style={{
+            fontSize: 11, textTransform: "uppercase", letterSpacing: "0.09em",
+            color: "var(--color-text-tertiary)", marginBottom: 16,
+          }}>
+            Architecture preview — press “Start training” to run
           </div>
         )}
 
@@ -542,6 +546,20 @@ export default function App() {
             </ResponsiveContainer>
           </div>
         </>
+      )}
+
+      {/* Live digit drawing — only after a full training run */}
+      {isDone ? (
+        <DrawingCanvas trainExamples={Math.round(60000 * config.data_fraction)} />
+      ) : (
+        <div style={{
+          padding: 16, borderRadius: 12, marginTop: snapshots.length > 0 ? 0 : 4,
+          border: "1px dashed var(--color-border-secondary)",
+          background: "var(--color-background-primary)",
+          fontSize: 13, color: "var(--color-text-tertiary)", textAlign: "center",
+        }}>
+          ✏️ Train the network first to enable digit drawing.
+        </div>
       )}
     </div>
     </BeginnerContext.Provider>

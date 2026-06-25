@@ -29,7 +29,7 @@ export interface TrainConfig {
 
 // Backend base URL — baked in at build time via VITE_API_URL so the same
 // build runs locally and in production; falls back to localhost for dev.
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 // The backend emits train_accuracy/test_accuracy and per-layer grad_magnitude.
 // Map those onto the field names the components consume.
