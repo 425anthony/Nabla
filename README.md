@@ -9,10 +9,13 @@ A from-scratch neural network trained on MNIST with a live interactive visualize
 
 - Trains a configurable feedforward network on MNIST (60k images, 10 classes)
 - Streams training progress live to the browser via Server-Sent Events
-- Visualizes the network as an SVG graph where edge color encodes weight sign/magnitude
-- **Gradient heatmap mode** — colors each neuron by its ∂L/∂z value so you can watch vanishing gradients in real time
-- Epoch scrubber to play back training frame by frame
-- Click any neuron to inspect its weights, bias, incoming weight distribution, and gradient
+- **Architecture builder** — add/remove hidden layers and set each layer's neuron count with sliders; the network diagram updates as a live preview before you train (up to 6 hidden layers)
+- Dark-themed SVG network visualizer with glowing neurons, where edge color encodes weight sign/magnitude
+- **Gradient heatmap mode** — colors each neuron's glow by its ∂L/∂z value so you can watch vanishing gradients in real time
+- **Dead neuron detector** — flags dead ReLU units (gray), with a per-layer count and a plain-English explanation
+- Epoch scrubber with **playback speed control** (0.5× / 1× / 2×) and smooth animated weight transitions between epochs
+- Click any neuron to inspect its weights, bias, incoming-weight bar chart, gradient, and mean activation
+- **Beginner mode** — an ⓘ glossary tooltip on every technical term, a live plain-English status of what's happening each epoch, and an overfitting warning when train accuracy pulls ahead of test accuracy
 - Gradient check endpoint: verifies backprop correctness via finite differences
 
 ---
@@ -99,6 +102,10 @@ npm install
 npm run dev   # serves on http://localhost:5173
 ```
 
+**One command (no Docker):** once the venv and `npm install` are set up, `./dev.sh`
+starts both the backend (uvicorn, `:8000`) and frontend (Vite, `:5173`) together
+and shuts both down cleanly on Ctrl+C.
+
 MNIST data (~11MB) downloads automatically on first run.
 
 ---
@@ -159,31 +166,39 @@ frontend as a **static site**.
 
 ```
 nabla/
+├── dev.sh                      # Start backend + frontend together (Ctrl+C stops both)
 ├── docker-compose.yml          # Brings up backend + frontend together
 ├── render.yaml                 # Render blueprint (backend web service + static frontend)
+├── .gitignore
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── app/
 │       ├── __init__.py
 │       ├── data.py             # MNIST download + cache + batching
-│       ├── network.py          # DenseLayer, SoftmaxOutputLayer, NeuralNetwork, gradient_check
-│       ├── trainer.py          # Training loop, one-hot, snapshot export
-│       └── main.py             # FastAPI app, SSE streaming, job store, validation
+│       ├── network.py          # DenseLayer, SoftmaxOutputLayer, NeuralNetwork, gradient_check, grad clamping
+│       ├── trainer.py          # Training loop, one-hot, snapshot export, dead-neuron stats
+│       └── main.py             # FastAPI app, SSE streaming, job store, request validation, CORS
 └── frontend/
     ├── Dockerfile
     ├── nginx.conf              # SPA serving for the production image
     ├── index.html
+    ├── public/
+    │   └── favicon.svg
     └── src/
         ├── main.tsx
-        ├── index.css           # Dark theme tokens + component styles
-        ├── App.tsx             # Layout, config panel, controls, loss/accuracy chart, scrubber
+        ├── index.css           # Dark theme tokens + component styles (buttons, toggle, inputs)
+        ├── vite-env.d.ts       # VITE_API_URL typing
+        ├── glossary.ts         # Plain-English definitions for the beginner-mode tooltips
+        ├── App.tsx             # Layout, config panel, architecture builder, controls,
+        │                       #   beginner panels, loss/accuracy chart, scrubber + speed control
         ├── hooks/
         │   └── useTraining.ts  # POST /train → SSE stream, snapshot normalization
         └── components/
-            └── NetworkDiagram.tsx   # SVG network: glowing neurons, weight/gradient coloring, inspect panel
+            ├── NetworkDiagram.tsx   # SVG network: glowing/dead neurons, weight & gradient coloring, inspect panel
+            └── InfoTip.tsx          # ⓘ glossary tooltip + beginner-mode context
 ```
 
-> The loss curve, epoch scrubber, config form, and neuron inspector are
-> implemented inline within `App.tsx` and `NetworkDiagram.tsx` rather than as
-> separate component files.
+> The loss curve, epoch scrubber, architecture builder, config form, neuron
+> inspector, and beginner-mode panels are implemented inline within `App.tsx`
+> and `NetworkDiagram.tsx` rather than as separate component files.
